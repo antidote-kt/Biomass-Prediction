@@ -1,0 +1,9 @@
+csiro-biomass
+__pycache__
+.agents
+.idea
+方法记录.md
+生物量预测.md
+csiro-test.ipynb
+model.svg
+result.svg
