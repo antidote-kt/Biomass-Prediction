@@ -14,7 +14,7 @@ from .metrics import rmse_per_target, weighted_r2_global
 
 
 def load_model_weights(model: nn.Module, weight_path: Path, strict: bool = True) -> None:
-    """Load a saved model state_dict, handling DataParallel prefixes."""
+    """加载保存的 state_dict，并兼容多卡训练产生的 module. 前缀。"""
     if not weight_path.exists():
         raise FileNotFoundError(f"resume weight not found: {weight_path}")
 
@@ -27,7 +27,7 @@ def load_model_weights(model: nn.Module, weight_path: Path, strict: bool = True)
 
 
 def resolve_resume_weight_path(cfg: CFG, fold: Optional[int] = None) -> Optional[Path]:
-    """Resolve the checkpoint path for full-data training or a specific fold."""
+    """解析指定 fold 对应的续训权重路径。"""
     if not cfg.resume_training:
         return None
 
@@ -37,17 +37,10 @@ def resolve_resume_weight_path(cfg: CFG, fold: Optional[int] = None) -> Optional
             raise ValueError(
                 f"resume_model_paths has {len(cfg.resume_model_paths)} paths, "
                 f"but fold {idx} was requested"
-            )
+        )
         return Path(cfg.resume_model_paths[idx])
 
-    if cfg.resume_model_dir is not None:
-        if fold is None:
-            return cfg.resume_model_dir / "biomass_all_train.pth"
-        return cfg.resume_model_dir / f"biomass_fold{fold}.pth"
-
-    raise ValueError(
-        "resume_training=True, but neither resume_model_paths nor resume_model_dir is set"
-    )
+    raise ValueError("resume_training=True, but resume_model_paths is empty")
 
 
 def train_one_epoch(
@@ -61,7 +54,7 @@ def train_one_epoch(
     device: torch.device,
     dist_ctx: DistributedContext,
 ) -> float:
-    """Train one epoch and return mean loss."""
+    """训练一个 epoch，并返回平均 loss。"""
     model.train()
     running = 0.0
     n = 0
@@ -69,6 +62,7 @@ def train_one_epoch(
     for batch in tqdm(loader, desc="train", leave=False, disable=not dist_ctx.is_main_process):
         x, y, aux_targets = batch
         if isinstance(x, tuple) and len(x) == 2:
+            # 双视角输入分别搬到设备上，再以 tuple 形式交给模型。
             imgs1, imgs2 = x
             imgs1 = imgs1.to(device, non_blocking=True)
             imgs2 = imgs2.to(device, non_blocking=True)
@@ -87,14 +81,21 @@ def train_one_epoch(
             biomass_pred = outputs["biomass"]
             loss = loss_fn(biomass_pred, y)
             if cfg.use_auxiliary_tasks:
+                # 辅助任务 loss 只在训练阶段参与优化。
                 loss = loss + compute_auxiliary_loss(outputs, aux_targets, cfg)
 
         if scaler is not None and amp:
+            # CUDA 混合精度训练：缩放梯度以减少 underflow 风险。
             scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            if cfg.grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
             scaler.step(optimizer)
             scaler.update()
         else:
             loss.backward()
+            if cfg.grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
             optimizer.step()
 
         bs = y.size(0)
@@ -114,7 +115,7 @@ def validate(
     device: torch.device,
     dist_ctx: DistributedContext,
 ):
-    """Run validation and return loss, RMSE and weighted R^2."""
+    """执行验证，并返回 loss、逐目标 RMSE 和加权 R^2。"""
     model.eval()
     running = 0.0
     n = 0
@@ -152,6 +153,7 @@ def validate(
     local_trues = np.vstack(trues) if trues else np.empty((0, len(cfg.targets)), dtype=np.float32)
     gathered_preds = gather_objects(local_preds, dist_ctx)
     gathered_trues = gather_objects(local_trues, dist_ctx)
+    # DDP 验证时收集所有进程的预测，按完整验证集计算指标。
     preds = np.vstack(gathered_preds)
     trues = np.vstack(gathered_trues)
     rmse = rmse_per_target(preds, trues)

@@ -7,7 +7,7 @@ import torch.nn as nn
 
 
 class LocalMambaBlock(nn.Module):
-    """Lightweight sequence modeling block."""
+    """轻量级序列建模模块，用深度卷积模拟局部 token 交互。"""
 
     def __init__(self, dim: int, kernel_size: int = 5, dropout: float = 0.1):
         super().__init__()
@@ -37,7 +37,7 @@ class LocalMambaBlock(nn.Module):
 
 
 class SelfAttentionBlock(nn.Module):
-    """Self-attention block for single-view modeling."""
+    """单视角建模使用的自注意力模块。"""
 
     def __init__(self, dim: int, num_heads: int = 8, dropout: float = 0.1):
         super().__init__()
@@ -66,7 +66,7 @@ class SelfAttentionBlock(nn.Module):
 
 
 class CrossAttentionBlock(nn.Module):
-    """Cross-attention block for dual-view fusion."""
+    """双视角特征融合使用的交叉注意力模块。"""
 
     def __init__(self, dim: int, num_heads: int = 8, dropout: float = 0.1):
         super().__init__()
@@ -98,7 +98,7 @@ class CrossAttentionBlock(nn.Module):
 
 
 class BiomassModel(nn.Module):
-    """Configurable biomass regression model."""
+    """可配置的生物量回归模型。"""
 
     def __init__(
         self,
@@ -111,6 +111,7 @@ class BiomassModel(nn.Module):
         use_self_attention: bool = False,
         num_heads: int = 8,
         num_mamba_layers: int = 2,
+        log_targets: bool = True,
         aux_dims: Optional[Dict[str, int]] = None,
     ):
         super().__init__()
@@ -120,6 +121,7 @@ class BiomassModel(nn.Module):
         self.use_mamba = use_mamba
         self.use_cross_attention = use_cross_attention
         self.use_self_attention = use_self_attention
+        self.log_targets = log_targets
         self.aux_dims = aux_dims or {}
 
         self.backbone = timm.create_model(
@@ -132,6 +134,7 @@ class BiomassModel(nn.Module):
         nf = self.backbone.num_features
 
         if self.dual_view:
+            # 双视角模式下，左右图像先分别过同一个 backbone，再进行特征融合。
             if self.use_cross_attention:
                 self.cross_attn = CrossAttentionBlock(nf, num_heads=num_heads, dropout=0.1)
             if self.use_mamba:
@@ -151,6 +154,7 @@ class BiomassModel(nn.Module):
         self.pool = nn.AdaptiveAvgPool1d(1)
 
         def make_head() -> nn.Sequential:
+            """创建单个回归头，每个目标独立预测。"""
             return nn.Sequential(
                 nn.Linear(nf, nf // 2),
                 nn.GELU(),
@@ -162,10 +166,9 @@ class BiomassModel(nn.Module):
         self.head_green = make_head()
         self.head_dead = make_head()
         self.head_clover = make_head()
-        self.head_gdm = make_head()
-        self.head_total = make_head()
         self.aux_heads = nn.ModuleDict()
 
+        # 辅助头只在提供 aux_dims 时创建，推理脚本默认不加载这些头。
         if "height" in self.aux_dims:
             self.aux_heads["height"] = nn.Linear(nf, 1)
         if "ndvi" in self.aux_dims:
@@ -187,11 +190,13 @@ class BiomassModel(nn.Module):
 
             x_fused = None
             if self.use_cross_attention:
+                # 让左右视角互相查询信息，融合互补区域。
                 x_fused = self.cross_attn(x_l, x_r)
 
             if self.use_mamba:
                 if x_fused is None:
                     x_fused = torch.cat([x_l, x_r], dim=1)
+                # 在拼接后的 token 序列上继续做局部序列建模。
                 x_fused = self.mamba_fusion(x_fused)
 
             if x_fused is None:
@@ -211,8 +216,17 @@ class BiomassModel(nn.Module):
         green = self.head_green(x_pool)
         dead = self.head_dead(x_pool)
         clover = self.head_clover(x_pool)
-        gdm = self.head_gdm(x_pool)
-        total = self.head_total(x_pool)
+        if self.log_targets:
+            # 三个头预测 log(1+y) 空间的 Green/Dead/Clover；
+            # GDM 和 Total 先还原到原始尺度相加，再映射回 log 空间对齐训练目标。
+            green_raw = torch.expm1(green)
+            dead_raw = torch.expm1(dead)
+            clover_raw = torch.expm1(clover)
+            gdm = torch.log1p(green_raw + clover_raw)
+            total = torch.log1p(green_raw + clover_raw + dead_raw)
+        else:
+            gdm = green + clover
+            total = gdm + dead
 
         outputs = {
             "biomass": torch.cat([green, dead, clover, gdm, total], dim=1)

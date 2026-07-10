@@ -11,7 +11,7 @@ def compute_auxiliary_loss(
     aux_targets: Dict[str, torch.Tensor],
     cfg: CFG,
 ) -> torch.Tensor:
-    """Compute weighted auxiliary loss terms from train-only metadata."""
+    """根据训练集元数据计算加权辅助任务损失。"""
     total = None
 
     if "height" in outputs and "height" in aux_targets:

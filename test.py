@@ -19,7 +19,7 @@ from biomass_training.utils import inverse_log_targets, seed_everything
 
 @dataclass(frozen=True)
 class TestCFG:
-    """Inference configuration."""
+    """推理配置。"""
 
     seed: int = 42
     data_dir: Path = Path("./csiro-biomass")
@@ -30,7 +30,7 @@ class TestCFG:
 
 
 class PastureImageTestDataset(Dataset):
-    """Inference dataset for biomass prediction."""
+    """生物量预测推理数据集。"""
 
     def __init__(self, df: pd.DataFrame, image_root: Path, img_size: int, dual_view: bool = True):
         self.df = df.reset_index(drop=True)
@@ -52,6 +52,7 @@ class PastureImageTestDataset(Dataset):
         w, h = img.size
 
         if self.dual_view:
+            # 推理阶段沿用训练时的双视角裁剪方式。
             left = img.crop((0, 0, h, h))
             right = img.crop((w - h, 0, w, h))
             img1 = self.transform(image=np.array(left))["image"]
@@ -63,7 +64,7 @@ class PastureImageTestDataset(Dataset):
 
 
 def collate_fn_test(batch):
-    """Collate test batches for single-view or dual-view models."""
+    """拼接单视角或双视角的测试 batch。"""
     first_x, _ = batch[0]
     image_paths = [image_path for _, image_path in batch]
 
@@ -77,14 +78,14 @@ def collate_fn_test(batch):
 
 
 def resolve_model_paths(test_cfg: TestCFG) -> list[Path]:
-    """Resolve model checkpoint paths."""
+    """解析需要参与集成推理的模型权重路径。"""
     if test_cfg.model_paths:
         return [Path(p) for p in test_cfg.model_paths]
     return sorted(test_cfg.model_dir.glob(test_cfg.model_glob))
 
 
 def load_model_for_inference(train_cfg: CFG, weight_path: Path, device: torch.device) -> BiomassModel:
-    """Load a biomass model and ignore auxiliary heads during test-time inference."""
+    """加载生物量模型；推理时忽略训练专用的辅助头。"""
     model = BiomassModel(
         model_name=train_cfg.backbone,
         pretrained=False,
@@ -94,6 +95,7 @@ def load_model_for_inference(train_cfg: CFG, weight_path: Path, device: torch.de
         use_self_attention=train_cfg.use_self_attention,
         num_heads=train_cfg.num_heads,
         num_mamba_layers=train_cfg.num_mamba_layers,
+        log_targets=train_cfg.log_targets,
         aux_dims={},
     ).to(device)
 
@@ -108,7 +110,7 @@ def load_model_for_inference(train_cfg: CFG, weight_path: Path, device: torch.de
 
 @torch.no_grad()
 def predict_with_model(model: BiomassModel, loader: DataLoader, device: torch.device, log_targets: bool) -> np.ndarray:
-    """Run inference and return only the five biomass targets."""
+    """执行推理，只返回五个生物量目标的预测。"""
     preds_all = []
     amp_enabled = device.type == "cuda"
 
@@ -126,6 +128,7 @@ def predict_with_model(model: BiomassModel, loader: DataLoader, device: torch.de
         biomass_pred = outputs["biomass"] if isinstance(outputs, dict) else outputs
         biomass_pred = biomass_pred.float().cpu()
         if log_targets:
+            # 训练时若使用 log1p 目标，推理输出需要还原到原始尺度。
             biomass_pred = inverse_log_targets(biomass_pred)
         biomass_pred = torch.clamp(biomass_pred, min=0.0)
         preds_all.append(biomass_pred.numpy())
@@ -134,7 +137,7 @@ def predict_with_model(model: BiomassModel, loader: DataLoader, device: torch.de
 
 
 def build_submission(test_df: pd.DataFrame, test_wide: pd.DataFrame, predictions: np.ndarray, targets: Sequence[str]) -> pd.DataFrame:
-    """Convert per-image predictions back to official long-format submission."""
+    """将每张图片的预测结果转回官方提交要求的长表格式。"""
     target_to_idx = {target: i for i, target in enumerate(targets)}
     image_to_idx = {image_path: i for i, image_path in enumerate(test_wide["image_path"].tolist())}
 
@@ -195,6 +198,7 @@ def main():
             torch.cuda.empty_cache()
         gc.collect()
 
+    # 多个 fold 权重做简单平均，得到最终集成预测。
     ensemble_predictions = np.mean(np.stack(all_preds, axis=0), axis=0)
     print("Ensemble predictions shape:", ensemble_predictions.shape)
 

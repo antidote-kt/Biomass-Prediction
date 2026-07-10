@@ -6,7 +6,7 @@ import torch
 
 
 def seed_everything(seed: int) -> None:
-    """Fix random seeds for reproducibility."""
+    """固定随机种子，尽量保证实验可复现。"""
     random.seed(seed)
     np.random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
@@ -17,7 +17,7 @@ def seed_everything(seed: int) -> None:
 
 
 def inverse_log_targets(x):
-    """Map log(1+y) predictions back to original biomass space."""
+    """将 log(1+y) 空间的预测值还原到原始生物量空间。"""
     if isinstance(x, torch.Tensor):
         return torch.expm1(x)
     return np.expm1(x)

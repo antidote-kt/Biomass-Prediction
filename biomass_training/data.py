@@ -11,13 +11,14 @@ from torch.utils.data import Dataset
 
 
 def make_train_wide(train_csv: Path) -> pd.DataFrame:
-    """Convert official long-format train.csv into wide format."""
+    """将官方长表格式的 train.csv 转成每张图片一行的宽表。"""
     df = pd.read_csv(train_csv)
     required_cols = {"image_path", "target_name", "target"}
     missing = required_cols - set(df.columns)
     if missing:
         raise ValueError(f"train.csv missing columns: {missing}")
 
+    # 官方 CSV 中同一张图片有多行目标值，这里 pivot 成多列目标。
     wide = (
         df.pivot_table(
             index="image_path",
@@ -29,6 +30,7 @@ def make_train_wide(train_csv: Path) -> pd.DataFrame:
         .copy()
     )
 
+    # 保留可用的元数据字段，后续可作为辅助任务监督信号。
     metadata_cols = [
         "Sampling_Date",
         "State",
@@ -58,7 +60,7 @@ def make_train_wide(train_csv: Path) -> pd.DataFrame:
 
 
 def prepare_auxiliary_metadata(train_wide: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int]]:
-    """Encode metadata targets used for train-time auxiliary supervision."""
+    """编码训练时辅助监督会用到的元数据目标。"""
     train_wide = train_wide.copy()
     aux_dims: Dict[str, int] = {}
 
@@ -92,7 +94,7 @@ def prepare_auxiliary_metadata(train_wide: pd.DataFrame) -> Tuple[pd.DataFrame, 
 
 
 def build_transforms(img_size: int):
-    """Build training and validation transforms."""
+    """构建训练集和验证集的数据增强。"""
     train_tfms = A.Compose([
         A.HorizontalFlip(p=0.5),
         A.VerticalFlip(p=0.5),
@@ -125,7 +127,7 @@ def build_transforms(img_size: int):
 
 
 class PastureImageTrainDataset(Dataset):
-    """Training dataset for pasture biomass images."""
+    """牧草生物量图片的训练数据集。"""
 
     def __init__(
         self,
@@ -153,6 +155,7 @@ class PastureImageTrainDataset(Dataset):
         w, h = img.size
 
         if self.dual_view:
+            # 原图左右两侧是两个视角，分别裁成正方形后送入模型。
             left = img.crop((0, 0, h, h))
             right = img.crop((w - h, 0, w, h))
             if self.transform is not None:
@@ -177,10 +180,12 @@ class PastureImageTrainDataset(Dataset):
             dtype=torch.float32,
         )
         if self.log_targets:
+            # 对目标值做 log1p，缓解生物量数值跨度较大的问题。
             y = torch.log1p(y)
 
         aux_targets = {}
         if self.use_auxiliary_tasks:
+            # 这些辅助目标只在训练中使用，帮助 backbone 学到更稳定的表征。
             if "Height_Ave_cm" in row.index and pd.notna(row["Height_Ave_cm"]):
                 aux_targets["height"] = torch.tensor(row["Height_Ave_cm"], dtype=torch.float32)
             if "Pre_GSHH_NDVI" in row.index and pd.notna(row["Pre_GSHH_NDVI"]):
@@ -198,7 +203,7 @@ class PastureImageTrainDataset(Dataset):
 
 
 def collate_fn_train(batch):
-    """Collate single-view or dual-view batches."""
+    """拼接单视角或双视角 batch。"""
     first_sample = batch[0]
     if isinstance(first_sample[0], tuple):
         imgs1, imgs2, ys = [], [], []

@@ -1,4 +1,4 @@
-"""Biomass training package."""
+"""生物量预测训练包。"""
 
 from .main import main
 
