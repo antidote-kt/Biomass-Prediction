@@ -215,11 +215,11 @@ def run_kfold_training(
         best_path = cfg.save_dir / f"biomass_fold{fold}.pth"
 
         log(f"\n{'=' * 60}", dist_ctx)
-        log(f"Fold {fold} | train={len(tr_ds)} val={len(va_ds)} | save={best_path}", dist_ctx)
+        log(f"第 {fold} 折 | 训练图片数={len(tr_ds)} 验证图片数={len(va_ds)} | 保存路径={best_path}", dist_ctx)
         log(
-            f"Dry_Total quintiles | "
-            f"train={np.bincount(stratify_labels[tr_idx], minlength=cfg.stratify_bins).tolist()} "
-            f"val={np.bincount(stratify_labels[va_idx], minlength=cfg.stratify_bins).tolist()}",
+            f"Dry_Total 五分位分布 | "
+            f"训练={np.bincount(stratify_labels[tr_idx], minlength=cfg.stratify_bins).tolist()} "
+            f"验证={np.bincount(stratify_labels[va_idx], minlength=cfg.stratify_bins).tolist()}",
             dist_ctx,
         )
         log(f"{'=' * 60}", dist_ctx)
@@ -256,9 +256,9 @@ def run_kfold_training(
 
             score = float(val_r2)
             log(
-                f"epoch {epoch + 1}/{cfg.epochs} | "
-                f"train_loss {train_loss:.5f} | val_loss {val_loss:.5f} | "
-                f"weighted_r2 {val_r2:.6f} | rmse {val_rmse}",
+                f"轮次 {epoch + 1}/{cfg.epochs} | "
+                f"训练损失 {train_loss:.5f} | 验证损失 {val_loss:.5f} | "
+                f"加权 R2 {val_r2:.6f} | RMSE {val_rmse}",
                 dist_ctx,
             )
 
@@ -268,7 +268,7 @@ def run_kfold_training(
                 # 只保存验证集 weighted R2 最好的权重。
                 torch.save(model_to_save.state_dict(), best_path)
 
-        log(f"Fold {fold} best weighted_r2: {best_score:.6f}", dist_ctx)
+        log(f"第 {fold} 折最佳加权 R2: {best_score:.6f}", dist_ctx)
         barrier(dist_ctx)
         cleanup_training(model, tr_loader, va_loader, tr_ds, va_ds)
 
@@ -283,16 +283,18 @@ def main():
         device = torch.device("cuda", dist_ctx.local_rank if dist_ctx.enabled else 0)
     else:
         device = torch.device("cpu")
-    log(f"Current Device: {device}", dist_ctx)
+    log(f"当前设备: {device}", dist_ctx)
     if dist_ctx.enabled:
-        log(f"Distributed training enabled | world_size={dist_ctx.world_size}", dist_ctx)
+        log(f"已启用分布式训练 | 进程数={dist_ctx.world_size}", dist_ctx)
 
-    cfg.save_dir.mkdir(parents=True, exist_ok=True)
+    if dist_ctx.is_main_process:
+        cfg.save_dir.mkdir(parents=True, exist_ok=True)
+    barrier(dist_ctx)
 
     try:
         train_wide = make_train_wide(cfg.data_dir / cfg.train_csv)
         train_wide, aux_dims = prepare_auxiliary_metadata(train_wide)
-        log(f"Train wide shape: {train_wide.shape}", dist_ctx)
+        log(f"训练宽表形状: {train_wide.shape}", dist_ctx)
         if dist_ctx.is_main_process:
             if "display" in globals():
                 display(train_wide.head())
@@ -301,18 +303,18 @@ def main():
 
         train_tfms, val_tfms = build_transforms(cfg.img_size)
         loss_fn = nn.HuberLoss(delta=cfg.loss_beta).to(device)
-        log(f"Loss: HuberLoss(delta={cfg.loss_beta}) on log(1+y)", dist_ctx)
+        log(f"损失函数: HuberLoss(delta={cfg.loss_beta})，作用于 log(1+y) 目标", dist_ctx)
         log(
-            f"Optimizer: AdamW(backbone_lr={cfg.backbone_lr}, head_lr={cfg.head_lr}, "
-            f"weight_decay={cfg.weight_decay})",
+            f"优化器: AdamW(backbone 学习率={cfg.backbone_lr}, head 学习率={cfg.head_lr}, "
+            f"权重衰减={cfg.weight_decay})",
             dist_ctx,
         )
-        log(f"Scheduler: {cfg.warmup_epochs} warmup epochs + cosine annealing", dist_ctx)
-        log(f"Gradient clipping: {cfg.grad_clip}", dist_ctx)
+        log(f"学习率调度: 预热 {cfg.warmup_epochs} 轮 + 余弦退火", dist_ctx)
+        log(f"梯度裁剪: {cfg.grad_clip}", dist_ctx)
         if cfg.log_targets:
-            log("Biomass targets are trained in log(1+y) space.", dist_ctx)
+            log("生物量目标将在 log(1+y) 空间训练。", dist_ctx)
         if cfg.use_auxiliary_tasks:
-            log(f"Auxiliary tasks enabled: {sorted(aux_dims.keys())}", dist_ctx)
+            log(f"已启用辅助任务: {sorted(aux_dims.keys())}", dist_ctx)
 
         run_kfold_training(cfg, train_wide, train_tfms, val_tfms, loss_fn, device, aux_dims, dist_ctx)
     finally:

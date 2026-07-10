@@ -13,17 +13,27 @@ from .distributed import DistributedContext, gather_objects
 from .metrics import rmse_per_target, weighted_r2_global
 
 
+def move_model_input_to_device(x, device: torch.device):
+    """把单视角或双视角输入搬到目标设备。"""
+    if isinstance(x, (tuple, list)) and len(x) == 2:
+        imgs1, imgs2 = x
+        imgs1 = imgs1.to(device, non_blocking=True)
+        imgs2 = imgs2.to(device, non_blocking=True)
+        return (imgs1, imgs2)
+    return x.to(device, non_blocking=True)
+
+
 def load_model_weights(model: nn.Module, weight_path: Path, strict: bool = True) -> None:
     """加载保存的 state_dict，并兼容多卡训练产生的 module. 前缀。"""
     if not weight_path.exists():
-        raise FileNotFoundError(f"resume weight not found: {weight_path}")
+        raise FileNotFoundError(f"找不到续训权重: {weight_path}")
 
     state_dict = torch.load(weight_path, map_location="cpu")
     if len(state_dict) > 0 and next(iter(state_dict.keys())).startswith("module."):
         state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
 
     model.load_state_dict(state_dict, strict=strict)
-    print(f"Loaded resume weights: {weight_path} (strict={strict})")
+    print(f"已加载续训权重: {weight_path} (strict={strict})")
 
 
 def resolve_resume_weight_path(cfg: CFG, fold: Optional[int] = None) -> Optional[Path]:
@@ -35,12 +45,12 @@ def resolve_resume_weight_path(cfg: CFG, fold: Optional[int] = None) -> Optional
         idx = 0 if fold is None else fold
         if idx >= len(cfg.resume_model_paths):
             raise ValueError(
-                f"resume_model_paths has {len(cfg.resume_model_paths)} paths, "
-                f"but fold {idx} was requested"
+                f"resume_model_paths 只有 {len(cfg.resume_model_paths)} 个路径，"
+                f"但当前请求的是第 {idx} 折"
         )
         return Path(cfg.resume_model_paths[idx])
 
-    raise ValueError("resume_training=True, but resume_model_paths is empty")
+    raise ValueError("resume_training=True，但 resume_model_paths 为空")
 
 
 def train_one_epoch(
@@ -59,16 +69,9 @@ def train_one_epoch(
     running = 0.0
     n = 0
 
-    for batch in tqdm(loader, desc="train", leave=False, disable=not dist_ctx.is_main_process):
+    for batch in tqdm(loader, desc="训练", leave=False, disable=not dist_ctx.is_main_process):
         x, y, aux_targets = batch
-        if isinstance(x, tuple) and len(x) == 2:
-            # 双视角输入分别搬到设备上，再以 tuple 形式交给模型。
-            imgs1, imgs2 = x
-            imgs1 = imgs1.to(device, non_blocking=True)
-            imgs2 = imgs2.to(device, non_blocking=True)
-            model_input = (imgs1, imgs2)
-        else:
-            model_input = x.to(device, non_blocking=True)
+        model_input = move_model_input_to_device(x, device)
         y = y.to(device, non_blocking=True)
         aux_targets = {
             name: value.to(device, non_blocking=True) for name, value in aux_targets.items()
@@ -121,15 +124,9 @@ def validate(
     n = 0
     preds, trues = [], []
 
-    for batch in tqdm(loader, desc="valid", leave=False, disable=not dist_ctx.is_main_process):
+    for batch in tqdm(loader, desc="验证", leave=False, disable=not dist_ctx.is_main_process):
         x, y, aux_targets = batch
-        if isinstance(x, tuple) and len(x) == 2:
-            imgs1, imgs2 = x
-            imgs1 = imgs1.to(device, non_blocking=True)
-            imgs2 = imgs2.to(device, non_blocking=True)
-            model_input = (imgs1, imgs2)
-        else:
-            model_input = x.to(device, non_blocking=True)
+        model_input = move_model_input_to_device(x, device)
         y = y.to(device, non_blocking=True)
         aux_targets = {
             name: value.to(device, non_blocking=True) for name, value in aux_targets.items()

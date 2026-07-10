@@ -4,7 +4,10 @@ __pycache__
 .idea
 方法记录.md
 生物量预测.md
+使用说明.md
 csiro-test.ipynb
 model.svg
 result.svg
 biomass-env
+submission.csv
+weights

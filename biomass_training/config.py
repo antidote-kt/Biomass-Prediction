@@ -9,15 +9,15 @@ class CFG:
 
     # 基础训练参数
     seed: int = 42
-    folds: int = 5
+    folds: int = 5 #
     img_size: int = 512
-    batch_size: int = 2
+    batch_size: int = 4 #
     num_workers: int = 0
-    epochs: int = 10
+    epochs: int = 20 #
     backbone_lr: float = 1e-5
     head_lr: float = 5e-4
     weight_decay: float = 1e-2
-    warmup_epochs: int = 5
+    warmup_epochs: int = 5 #
     grad_clip: float = 1.0
     stratify_bins: int = 5
 
@@ -29,15 +29,15 @@ class CFG:
     freeze_backbone: bool = False
 
     # 断点或外部权重加载配置
-    resume_training: bool = False
+    resume_training: bool = False #
     resume_strict: bool = False
-    resume_model_paths: Tuple[str, ...] = ()
+    resume_model_paths: Tuple[str, ...] = () #
     backbone: str = "vit_huge_plus_patch16_dinov3.lvd1689m"
 
-    # Kaggle 数据与输出路径
-    data_dir: Path = Path("/kaggle/input/competitions/csiro-biomass")
+    # 数据与输出路径
+    data_dir: Path = Path("../csiro-biomass") #
     train_csv: str = "train.csv"
-    save_dir: Path = Path("/kaggle/working/weights")
+    save_dir: Path = Path("./weights") #
     targets = ["Dry_Green_g", "Dry_Dead_g", "Dry_Clover_g", "GDM_g", "Dry_Total_g"]
 
     # 模型结构开关

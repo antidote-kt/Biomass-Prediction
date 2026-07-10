@@ -16,7 +16,7 @@ def make_train_wide(train_csv: Path) -> pd.DataFrame:
     required_cols = {"image_path", "target_name", "target"}
     missing = required_cols - set(df.columns)
     if missing:
-        raise ValueError(f"train.csv missing columns: {missing}")
+        raise ValueError(f"train.csv 缺少必要列: {missing}")
 
     # 官方 CSV 中同一张图片有多行目标值，这里 pivot 成多列目标。
     wide = (
@@ -49,7 +49,7 @@ def make_train_wide(train_csv: Path) -> pd.DataFrame:
 
     for col in ["Dry_Green_g", "Dry_Dead_g", "Dry_Clover_g"]:
         if col not in wide.columns:
-            raise ValueError(f"train.csv missing target after pivot: {col}")
+            raise ValueError(f"train.csv 转宽表后缺少目标列: {col}")
 
     if "GDM_g" not in wide.columns:
         wide["GDM_g"] = wide["Dry_Green_g"] + wide["Dry_Clover_g"]

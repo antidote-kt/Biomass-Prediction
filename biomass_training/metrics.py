@@ -21,7 +21,7 @@ def weighted_r2_global(pred: np.ndarray, true: np.ndarray, weights: np.ndarray) 
 
     wsum = np.sum(w)
     if wsum <= 0:
-        raise ValueError("weights sum must be positive")
+        raise ValueError("权重之和必须大于 0")
 
     ybar = np.sum(w * y) / wsum
     rss = np.sum(w * (y - yhat) ** 2)

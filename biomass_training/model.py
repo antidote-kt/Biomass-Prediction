@@ -182,8 +182,8 @@ class BiomassModel(nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         if self.dual_view:
-            if not isinstance(x, tuple) or len(x) != 2:
-                raise ValueError("Input must be a tuple of (left, right) when dual_view=True")
+            if not isinstance(x, (tuple, list)) or len(x) != 2:
+                raise ValueError("dual_view=True 时，输入必须是 (left, right) 形式的二元序列")
             left, right = x
             x_l = self.backbone(left)
             x_r = self.backbone(right)
@@ -204,7 +204,7 @@ class BiomassModel(nn.Module):
 
             x_pool = self.pool(x_fused.transpose(1, 2)).flatten(1)
         else:
-            if isinstance(x, tuple):
+            if isinstance(x, (tuple, list)):
                 x = x[0]
             x_feat = self.backbone(x)
             if self.use_self_attention:
