@@ -9,6 +9,7 @@ from tqdm.auto import tqdm
 
 from .auxiliary import compute_auxiliary_loss
 from .config import CFG
+from .distributed import DistributedContext, gather_objects
 from .metrics import rmse_per_target, weighted_r2_global
 
 
@@ -58,13 +59,14 @@ def train_one_epoch(
     scaler: Optional[torch.amp.GradScaler],
     amp: bool,
     device: torch.device,
+    dist_ctx: DistributedContext,
 ) -> float:
     """Train one epoch and return mean loss."""
     model.train()
     running = 0.0
     n = 0
 
-    for batch in tqdm(loader, desc="train", leave=False):
+    for batch in tqdm(loader, desc="train", leave=False, disable=not dist_ctx.is_main_process):
         x, y, aux_targets = batch
         if isinstance(x, tuple) and len(x) == 2:
             imgs1, imgs2 = x
@@ -110,6 +112,7 @@ def validate(
     loss_fn: nn.Module,
     amp: bool,
     device: torch.device,
+    dist_ctx: DistributedContext,
 ):
     """Run validation and return loss, RMSE and weighted R^2."""
     model.eval()
@@ -117,7 +120,7 @@ def validate(
     n = 0
     preds, trues = [], []
 
-    for batch in tqdm(loader, desc="valid", leave=False):
+    for batch in tqdm(loader, desc="valid", leave=False, disable=not dist_ctx.is_main_process):
         x, y, aux_targets = batch
         if isinstance(x, tuple) and len(x) == 2:
             imgs1, imgs2 = x
@@ -145,8 +148,12 @@ def validate(
         preds.append(biomass_pred.float().cpu().numpy())
         trues.append(y.float().cpu().numpy())
 
-    preds = np.vstack(preds)
-    trues = np.vstack(trues)
+    local_preds = np.vstack(preds) if preds else np.empty((0, len(cfg.targets)), dtype=np.float32)
+    local_trues = np.vstack(trues) if trues else np.empty((0, len(cfg.targets)), dtype=np.float32)
+    gathered_preds = gather_objects(local_preds, dist_ctx)
+    gathered_trues = gather_objects(local_trues, dist_ctx)
+    preds = np.vstack(gathered_preds)
+    trues = np.vstack(gathered_trues)
     rmse = rmse_per_target(preds, trues)
     score_weights = np.array([0.1, 0.1, 0.1, 0.2, 0.5], dtype=np.float64)
     r2 = weighted_r2_global(preds, trues, score_weights)

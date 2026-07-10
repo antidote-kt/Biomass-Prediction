@@ -48,6 +48,9 @@ class CFG:
     num_heads: int = 8
     num_mamba_layers: int = 2
     use_data_parallel: bool = False
+    use_distributed: bool = False
+    distributed_backend: str = "nccl"
+    find_unused_parameters: bool = False
     use_auxiliary_tasks: bool = True
     aux_ndvi_weight: float = 0.10
     aux_height_weight: float = 0.10
