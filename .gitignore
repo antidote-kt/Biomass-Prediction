@@ -10,4 +10,5 @@ model.svg
 result.svg
 biomass-env
 submission.csv
-weights
+models
+train.log

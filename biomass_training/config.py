@@ -9,9 +9,9 @@ class CFG:
 
     # 基础训练参数
     seed: int = 42
-    folds: int = 5 #
+    folds: int = 3 #
     img_size: int = 512
-    batch_size: int = 4 #
+    batch_size: int = 8 #
     num_workers: int = 0
     epochs: int = 20 #
     backbone_lr: float = 1e-5
@@ -26,7 +26,7 @@ class CFG:
     # y = log(1 + y)变换
     log_targets: bool = True
     amp: bool = True
-    freeze_backbone: bool = False
+    freeze_backbone: bool = True
 
     # 断点或外部权重加载配置
     resume_training: bool = False #
@@ -37,13 +37,13 @@ class CFG:
     # 数据与输出路径
     data_dir: Path = Path("../csiro-biomass") #
     train_csv: str = "train.csv"
-    save_dir: Path = Path("./weights") #
+    save_dir: Path = Path("./testmodels") #
     targets = ["Dry_Green_g", "Dry_Dead_g", "Dry_Clover_g", "GDM_g", "Dry_Total_g"]
 
     # 模型结构开关
     dual_view: bool = True
     use_mamba: bool = True
-    use_cross_attention: bool = True
+    use_cross_attention: bool = False
     use_self_attention: bool = False
     num_heads: int = 8
     num_mamba_layers: int = 2
@@ -53,8 +53,8 @@ class CFG:
 
     # 训练时使用元数据做辅助监督，推理时不会输出这些辅助头
     use_auxiliary_tasks: bool = True
-    aux_ndvi_weight: float = 0.10
-    aux_height_weight: float = 0.10
-    aux_species_weight: float = 0.05
-    aux_state_weight: float = 0.05
-    aux_month_weight: float = 0.05
+    aux_ndvi_weight: float = 0.05
+    aux_height_weight: float = 0.05
+    aux_species_weight: float = 0
+    aux_state_weight: float = 0
+    aux_month_weight: float = 0
