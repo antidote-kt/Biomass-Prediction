@@ -13,7 +13,7 @@ class CFG:
     img_size: int = 512
     batch_size: int = 8 #
     num_workers: int = 0
-    epochs: int = 20 #
+    epochs: int = 40 #
     backbone_lr: float = 1e-5
     head_lr: float = 5e-4
     weight_decay: float = 1e-2
@@ -23,6 +23,8 @@ class CFG:
 
     # 损失函数与目标值处理
     loss_beta: float = 5.0
+    target_loss_weights: Tuple[float, float, float, float, float] = (0.1, 0.1, 0.1, 0.2, 0.5)
+    score_weights: Tuple[float, float, float, float, float] = (0.1, 0.1, 0.1, 0.2, 0.5)
     # y = log(1 + y)变换
     log_targets: bool = True
     amp: bool = True
@@ -43,7 +45,7 @@ class CFG:
     # 模型结构开关
     dual_view: bool = True
     use_mamba: bool = True
-    use_cross_attention: bool = False
+    use_cross_attention: bool = True
     use_self_attention: bool = False
     num_heads: int = 8
     num_mamba_layers: int = 2

@@ -1,4 +1,35 @@
 import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class WeightedHuberLoss(nn.Module):
+    """按目标列加权的 Huber loss，权重顺序与 cfg.targets 一致。"""
+
+    def __init__(self, weights, delta: float = 1.0, normalize_weights: bool = True):
+        super().__init__()
+        weight = torch.as_tensor(weights, dtype=torch.float32)
+        if weight.ndim != 1:
+            raise ValueError("target loss 权重必须是一维序列")
+        if torch.any(weight < 0):
+            raise ValueError("target loss 权重不能为负数")
+        if float(weight.sum()) <= 0:
+            raise ValueError("target loss 权重之和必须大于 0")
+        if normalize_weights:
+            weight = weight / weight.sum()
+        self.register_buffer("weights", weight)
+        self.delta = float(delta)
+
+    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        if pred.shape != target.shape:
+            raise ValueError(f"预测和目标形状不一致: pred={pred.shape}, target={target.shape}")
+        if pred.shape[-1] != self.weights.numel():
+            raise ValueError(
+                f"预测目标数 {pred.shape[-1]} 与 loss 权重数 {self.weights.numel()} 不一致"
+            )
+        loss = F.huber_loss(pred, target, delta=self.delta, reduction="none")
+        return (loss * self.weights.view(1, -1)).sum(dim=1).mean()
 
 
 def rmse_per_target(pred: np.ndarray, true: np.ndarray) -> np.ndarray:

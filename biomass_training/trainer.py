@@ -11,6 +11,7 @@ from .auxiliary import compute_auxiliary_loss
 from .config import CFG
 from .distributed import DistributedContext, gather_objects
 from .metrics import rmse_per_target, weighted_r2_global
+from .utils import inverse_log_targets
 
 
 def move_model_input_to_device(x, device: torch.device):
@@ -153,7 +154,10 @@ def validate(
     # DDP 验证时收集所有进程的预测，按完整验证集计算指标。
     preds = np.vstack(gathered_preds)
     trues = np.vstack(gathered_trues)
+    if cfg.log_targets:
+        preds = inverse_log_targets(preds)
+        trues = inverse_log_targets(trues)
     rmse = rmse_per_target(preds, trues)
-    score_weights = np.array([0.1, 0.1, 0.1, 0.2, 0.5], dtype=np.float64)
+    score_weights = np.array(cfg.score_weights, dtype=np.float64)
     r2 = weighted_r2_global(preds, trues, score_weights)
     return running / max(n, 1), rmse, r2

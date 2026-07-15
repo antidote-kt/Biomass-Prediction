@@ -222,6 +222,8 @@ class BiomassModel(nn.Module):
         self.head_green = make_head()
         self.head_dead = make_head()
         self.head_clover = make_head()
+        self.head_gdm = make_head()
+        self.head_total = make_head()
         self.aux_heads = nn.ModuleDict()
 
         # 辅助头只在提供 aux_dims 时创建，推理脚本默认不加载这些头。
@@ -272,17 +274,8 @@ class BiomassModel(nn.Module):
         green = self.head_green(x_pool)
         dead = self.head_dead(x_pool)
         clover = self.head_clover(x_pool)
-        if self.log_targets:
-            # 三个头预测 log(1+y) 空间的 Green/Dead/Clover；
-            # GDM 和 Total 先还原到原始尺度相加，再映射回 log 空间对齐训练目标。
-            green_raw = torch.expm1(green)
-            dead_raw = torch.expm1(dead)
-            clover_raw = torch.expm1(clover)
-            gdm = torch.log1p(green_raw + clover_raw)
-            total = torch.log1p(green_raw + clover_raw + dead_raw)
-        else:
-            gdm = green + clover
-            total = gdm + dead
+        gdm = self.head_gdm(x_pool)
+        total = self.head_total(x_pool)
 
         outputs = {
             "biomass": torch.cat([green, dead, clover, gdm, total], dim=1)

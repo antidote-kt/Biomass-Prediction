@@ -17,6 +17,7 @@ from .data import (
     prepare_auxiliary_metadata,
 )
 from .distributed import DistributedContext, barrier, cleanup_distributed, reduce_mean, setup_distributed
+from .metrics import WeightedHuberLoss
 from .model import BiomassModel
 from .trainer import load_model_weights, resolve_resume_weight_path, train_one_epoch, validate
 from .utils import seed_everything
@@ -302,8 +303,13 @@ def main():
                 print(train_wide.head())
 
         train_tfms, val_tfms = build_transforms(cfg.img_size)
-        loss_fn = nn.HuberLoss(delta=cfg.loss_beta).to(device)
-        log(f"损失函数: HuberLoss(delta={cfg.loss_beta})，作用于 log(1+y) 目标", dist_ctx)
+        loss_fn = WeightedHuberLoss(weights=cfg.target_loss_weights, delta=cfg.loss_beta).to(device)
+        log(
+            f"损失函数: WeightedHuberLoss(delta={cfg.loss_beta}, "
+            f"target_loss_weights={cfg.target_loss_weights})",
+            dist_ctx,
+        )
+        log(f"验证 weighted R2 权重: {cfg.score_weights}", dist_ctx)
         log(
             f"优化器: AdamW(backbone 学习率={cfg.backbone_lr}, head 学习率={cfg.head_lr}, "
             f"权重衰减={cfg.weight_decay})",
