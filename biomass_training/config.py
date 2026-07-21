@@ -13,7 +13,7 @@ class CFG:
     img_size: int = 512
     batch_size: int = 8 #
     num_workers: int = 0
-    epochs: int = 40 #
+    epochs: int = 50 #
     backbone_lr: float = 1e-5
     head_lr: float = 5e-4
     weight_decay: float = 1e-2
@@ -39,7 +39,7 @@ class CFG:
     # 数据与输出路径
     data_dir: Path = Path("../csiro-biomass") #
     train_csv: str = "train.csv"
-    save_dir: Path = Path("./testmodels") #
+    save_dir: Path = Path("./models") #
     targets = ["Dry_Green_g", "Dry_Dead_g", "Dry_Clover_g", "GDM_g", "Dry_Total_g"]
 
     # 模型结构开关
@@ -55,7 +55,7 @@ class CFG:
 
     # 训练时使用元数据做辅助监督，推理时不会输出这些辅助头
     use_auxiliary_tasks: bool = True
-    aux_ndvi_weight: float = 0.05
+    aux_ndvi_weight: float = 0.1
     aux_height_weight: float = 0.05
     aux_species_weight: float = 0
     aux_state_weight: float = 0
