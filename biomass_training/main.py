@@ -41,6 +41,7 @@ def build_model(cfg: CFG, device: torch.device, aux_dims=None) -> nn.Module:
         num_mamba_layers=cfg.num_mamba_layers,
         log_targets=cfg.log_targets,
         aux_dims=aux_dims,
+        enable_5_head=cfg.enable_5_head,
     ).to(device)
 
 
@@ -194,8 +195,13 @@ def run_kfold_training(
     stratify_labels = make_dry_total_quintiles(train_wide, cfg.stratify_bins)
     groups = make_image_id_groups(train_wide)
     kf = StratifiedGroupKFold(n_splits=cfg.folds, shuffle=True, random_state=cfg.seed)
+    run_folds = set(cfg.run_folds)
 
     for fold, (tr_idx, va_idx) in enumerate(kf.split(train_wide, stratify_labels, groups)):
+        if run_folds and fold not in run_folds:
+            log(f"跳过第 {fold} 折；当前 run_folds={tuple(cfg.run_folds)}", dist_ctx)
+            continue
+
         # 每个 fold 都重新切分数据集、构建模型和优化器，互不共享训练状态。
         tr_df = train_wide.iloc[tr_idx].reset_index(drop=True)
         va_df = train_wide.iloc[va_idx].reset_index(drop=True)

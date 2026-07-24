@@ -36,6 +36,7 @@ class InferenceCFG:
     use_self_attention: bool = False
     num_heads: int = 8
     num_mamba_layers: int = 2
+    enable_5_head: bool = True
     targets: Sequence[str] = (
         "Dry_Green_g",
         "Dry_Dead_g",
@@ -169,6 +170,7 @@ class BiomassModel(nn.Module):
         num_mamba_layers: int = 2,
         log_targets: bool = True,
         aux_dims: Optional[Dict[str, int]] = None,
+        enable_5_head: bool = True,
     ):
         super().__init__()
         self.model_name = model_name
@@ -179,6 +181,7 @@ class BiomassModel(nn.Module):
         self.use_self_attention = use_self_attention
         self.log_targets = log_targets
         self.aux_dims = aux_dims or {}
+        self.enable_5_head = enable_5_head
 
         self.backbone = timm.create_model(
             model_name,
@@ -222,8 +225,9 @@ class BiomassModel(nn.Module):
         self.head_green = make_head()
         self.head_dead = make_head()
         self.head_clover = make_head()
-        self.head_gdm = make_head()
-        self.head_total = make_head()
+        if self.enable_5_head:
+            self.head_gdm = make_head()
+            self.head_total = make_head()
         self.aux_heads = nn.ModuleDict()
 
         # 辅助头只在提供 aux_dims 时创建，推理脚本默认不加载这些头。
@@ -274,8 +278,19 @@ class BiomassModel(nn.Module):
         green = self.head_green(x_pool)
         dead = self.head_dead(x_pool)
         clover = self.head_clover(x_pool)
-        gdm = self.head_gdm(x_pool)
-        total = self.head_total(x_pool)
+        if self.enable_5_head:
+            gdm = self.head_gdm(x_pool)
+            total = self.head_total(x_pool)
+        else:
+            if self.log_targets:
+                green_raw = torch.expm1(green)
+                dead_raw = torch.expm1(dead)
+                clover_raw = torch.expm1(clover)
+                gdm = torch.log1p(green_raw + clover_raw)
+                total = torch.log1p(green_raw + clover_raw + dead_raw)
+            else:
+                gdm = green + clover
+                total = gdm + dead
 
         outputs = {
             "biomass": torch.cat([green, dead, clover, gdm, total], dim=1)
@@ -357,6 +372,7 @@ def load_model_for_inference(cfg: InferenceCFG, weight_path: Path, device: torch
         num_mamba_layers=cfg.num_mamba_layers,
         log_targets=cfg.log_targets,
         aux_dims={},
+        enable_5_head=cfg.enable_5_head,
     ).to(device)
 
     state_dict = torch.load(weight_path, map_location="cpu")
